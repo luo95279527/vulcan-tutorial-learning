@@ -13,25 +13,31 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="shaders">
+    <Filter Include="资源文件\shaders">
       <UniqueIdentifier>{488d1270-61e3-4e20-b26d-2f04e433d9b6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="资源文件\shaders\NewFilter1">
+      <UniqueIdentifier>{d718dbff-0a16-486a-ba34-fcff16aab438}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="资源文件\textures">
+      <UniqueIdentifier>{1c523478-0e7a-4236-9f18-195c5cb82540}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\frag.spv">
-      <Filter>shaders</Filter>
+      <Filter>资源文件\shaders</Filter>
     </None>
     <None Include="shaders\shader.frag">
-      <Filter>shaders</Filter>
+      <Filter>资源文件\shaders</Filter>
     </None>
     <None Include="shaders\shader.vert">
-      <Filter>shaders</Filter>
+      <Filter>资源文件\shaders</Filter>
     </None>
     <None Include="shaders\vert.spv">
-      <Filter>shaders</Filter>
+      <Filter>资源文件\shaders</Filter>
     </None>
     <None Include="shaders\compile.bat">
-      <Filter>shaders</Filter>
+      <Filter>资源文件\shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

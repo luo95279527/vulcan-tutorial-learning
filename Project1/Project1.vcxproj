@@ -104,7 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>E:\VulkanSDK\1.4.313.1\Include;E:\Program Files (x86)\visual studio\Libraries\glm;E:\Program Files (x86)\visual studio\Libraries\glfw-3.4.bin.WIN64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>E:\VulkanSDK\1.4.313.1\Include;E:\Program Files (x86)\visual studio\Libraries\glm;E:\Program Files (x86)\visual studio\Libraries\glfw-3.4.bin.WIN64\include;E:\Program Files (x86)\visual studio\Libraries\stb-master;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
@@ -123,7 +123,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>E:\VulkanSDK\1.4.313.1\Include;E:\Program Files (x86)\visual studio\Libraries\glm;E:\Program Files (x86)\visual studio\Libraries\glfw-3.4.bin.WIN64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>E:\VulkanSDK\1.4.313.1\Include;E:\Program Files (x86)\visual studio\Libraries\glm;E:\Program Files (x86)\visual studio\Libraries\glfw-3.4.bin.WIN64\include;E:\Program Files (x86)\visual studio\Libraries\stb-master;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
