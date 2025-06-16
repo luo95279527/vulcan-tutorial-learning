@@ -10,6 +10,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <optional>
 #include <iostream>
@@ -95,20 +96,165 @@ const bool enableValidationLayers = true;
 #endif
 
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-    } else {
+    }
+    else {
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
 }
 
 void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {
         func(instance, debugMessenger, pAllocator);
     }
 }
+
+class Camera {
+public:
+    Camera() {
+        position = glm::vec3(0.0f, 0.0f, 3.0f);
+        front = glm::vec3(0.0f, 0.0f, -1.0f);
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+        worldUp = up;
+        yaw = -90.0f;
+        pitch = 0.0f;
+        movementSpeed = 5.0f;
+        mouseSensitivity = 0.05f;
+        zoom = 45.0f;
+        cameraRotationX = 0.0f;
+        cameraRotationY = 0.0f;
+        cameraRotationZ = 0.0f;
+    }
+
+    glm::mat4 getViewMatrix() {
+        // 计算旋转矩阵
+        glm::mat4 rotationMatrix = glm::mat4(1.0f);
+        rotationMatrix = glm::rotate(rotationMatrix, glm::radians(cameraRotationX), glm::vec3(1.0f, 0.0f, 0.0f));
+        rotationMatrix = glm::rotate(rotationMatrix, glm::radians(cameraRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+        rotationMatrix = glm::rotate(rotationMatrix, glm::radians(cameraRotationZ), glm::vec3(0.0f, 0.0f, 1.0f));
+        
+        // 计算旋转后的位置
+        rotatedPosition = glm::vec3(rotationMatrix * glm::vec4(position, 1.0f));
+        
+        // 计算旋转后的方向向量
+        glm::vec3 rotatedFront = glm::vec3(rotationMatrix * glm::vec4(front, 0.0f));
+        glm::vec3 rotatedUp = glm::vec3(rotationMatrix * glm::vec4(up, 0.0f));
+        
+        return glm::lookAt(rotatedPosition, rotatedPosition + rotatedFront, rotatedUp);
+    }
+
+    void processKeyboard(GLFWwindow* window, float deltaTime) {
+        float velocity = movementSpeed * deltaTime;
+        
+        // 添加相机位置旋转控制
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
+            cameraRotationX += 90.0f * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
+            cameraRotationX -= 90.0f * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
+            cameraRotationY += 90.0f * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS)
+            cameraRotationY -= 90.0f * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS)
+            cameraRotationZ += 90.0f * deltaTime;
+        if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS)
+            cameraRotationZ -= 90.0f * deltaTime;
+
+        // 计算旋转矩阵
+        glm::mat4 rotationMatrix = glm::mat4(1.0f);
+        rotationMatrix = glm::rotate(rotationMatrix, glm::radians(cameraRotationX), glm::vec3(1.0f, 0.0f, 0.0f));
+        rotationMatrix = glm::rotate(rotationMatrix, glm::radians(cameraRotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+        rotationMatrix = glm::rotate(rotationMatrix, glm::radians(cameraRotationZ), glm::vec3(0.0f, 0.0f, 1.0f));
+        
+        // 计算旋转后的方向向量
+        glm::vec3 rotatedFront = glm::vec3(rotationMatrix * glm::vec4(front, 0.0f));
+        glm::vec3 rotatedRight = glm::vec3(rotationMatrix * glm::vec4(right, 0.0f));
+        glm::vec3 rotatedUp = glm::vec3(rotationMatrix * glm::vec4(up, 0.0f));
+        
+        // 计算移动增量
+        glm::vec3 moveDelta(0.0f);
+        
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            moveDelta += rotatedFront;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            moveDelta -= rotatedFront;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            moveDelta -= rotatedRight;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            moveDelta += rotatedRight;
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+            moveDelta -= rotatedUp;
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            moveDelta += rotatedUp;
+            
+        // 如果有移动，则归一化移动向量并应用速度
+        if (glm::length(moveDelta) > 0.0f) {
+            moveDelta = glm::normalize(moveDelta) * velocity;
+            // 将移动增量转换回世界坐标系
+            glm::mat4 inverseRotation = glm::inverse(rotationMatrix);
+            glm::vec3 worldMoveDelta = glm::vec3(inverseRotation * glm::vec4(moveDelta, 0.0f));
+            position += worldMoveDelta;
+        }
+    }
+
+    void processMouseMovement(float xoffset, float yoffset, bool constrainPitch = true) {
+        xoffset *= mouseSensitivity;
+        yoffset *= mouseSensitivity;
+
+        yaw += xoffset;
+        pitch += yoffset;
+
+        if (constrainPitch) {
+            if (pitch > 89.0f)
+                pitch = 89.0f;
+            if (pitch < -89.0f)
+                pitch = -89.0f;
+        }
+
+        updateCameraVectors();
+    }
+
+    void processMouseScroll(float yoffset) {
+        zoom -= yoffset;
+        if (zoom < 1.0f)
+            zoom = 1.0f;
+        if (zoom > 45.0f)
+            zoom = 45.0f;
+    }
+
+    float getZoom() const { return zoom; }
+
+private:
+    glm::vec3 position;
+    glm::vec3 front;
+    glm::vec3 up;
+    glm::vec3 right;
+    glm::vec3 worldUp;
+    glm::vec3 rotatedPosition;
+
+    float yaw;
+    float pitch;
+    float movementSpeed;
+    float mouseSensitivity;
+    float zoom;
+    float cameraRotationX;
+    float cameraRotationY;
+    float cameraRotationZ;
+
+    void updateCameraVectors() {
+        glm::vec3 newFront;
+        newFront.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        newFront.y = sin(glm::radians(pitch));
+        newFront.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        front = glm::normalize(newFront);
+        right = glm::normalize(glm::cross(front, worldUp));
+        up = glm::normalize(glm::cross(right, front));
+    }
+};
+
 
 class HelloTriangleApplication {
 public:
@@ -181,13 +327,22 @@ private:
     bool framebufferResized = false;
     uint32_t currentFrame = 0;
 
+    //camera
+    Camera camera;
+    float lastX = static_cast<float>(WIDTH) / 2.0f;
+    float lastY = static_cast<float>(HEIGHT) / 2.0f;
+    bool firstMouse = true;
+    float deltaTime = 0.0f;
+    float lastFrame = 0.0f;
+    bool cameraControlEnabled = true;  // 添加视角控制标志
+
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;
         std::optional<uint32_t> transferFamily;
 
         bool isComplete() {
-            return graphicsFamily.has_value() && presentFamily.has_value()&& transferFamily.has_value();
+            return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
         }
     };
 
@@ -196,76 +351,13 @@ private:
         std::vector<VkSurfaceFormatKHR> formats;
         std::vector<VkPresentModeKHR> presentModes;
     };
-    
+
     struct UniformBufferObject {
         glm::mat4 model;
         glm::mat4 view;
         glm::mat4 proj;
     };
 
-    //const std::vector<Vertex> vertices = {
-    //    // 前面 (z轴正方向)
-    //    {{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    //    {{0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    //    {{0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    //    {{-0.5f, 0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    //    // 后面 (z轴负方向)
-    //    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    //    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    //    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-    //    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-
-    //    // 上面 (y轴正方向)
-    //    {{-0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    //    {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    //    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    //    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    //    // 下面 (y轴负方向)
-    //    {{0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    //    {{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    //    {{-0.5f, -0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-    //    {{0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-
-    //    // 右面 (x轴正方向)
-    //    {{0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    //    {{0.5f, 0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    //    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    //    {{0.5f, -0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    //    // 左面 (x轴负方向)
-    //    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    //    {{-0.5f, -0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    //    {{-0.5f, 0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    //    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-    //};
-
-    //const std::vector<uint16_t> indices = {
-    //    // 前面 (z轴正方向) - 两个三角形，一个顺时针一个逆时针
-    //    0, 1, 2,  2, 3, 0,  // 顺时针
-    //    0, 2, 1,  2, 0, 3,  // 逆时针
-    //    
-    //    // 后面 (z轴负方向)
-    //    4, 5, 6,  6, 7, 4,  // 顺时针
-    //    4, 6, 5,  6, 4, 7,  // 逆时针
-    //    
-    //    // 上面 (y轴正方向)
-    //    8, 9, 10,  10, 11, 8,  // 顺时针
-    //    8, 10, 9,  10, 8, 11,  // 逆时针
-    //    
-    //    // 下面 (y轴负方向)
-    //    12, 13, 14,  14, 15, 12,  // 顺时针
-    //    12, 14, 13,  14, 12, 15,  // 逆时针
-    //    
-    //    // 右面 (x轴正方向)
-    //    16, 17, 18,  18, 19, 16,  // 顺时针
-    //    16, 18, 17,  18, 16, 19,  // 逆时针
-    //    
-    //    // 左面 (x轴负方向)
-    //    20, 21, 22,  22, 23, 20,  // 顺时针
-    //    20, 22, 21,  22, 20, 23   // 逆时针
-    //};
 
     void initWindow() {
         glfwInit();
@@ -278,11 +370,11 @@ private:
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
         glfwSetWindowUserPointer(window, this);
         glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-    }
-
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
+        //camera
+        glfwSetCursorPosCallback(window, mouse_callback);
+        glfwSetScrollCallback(window, scroll_callback);
+        glfwSetMouseButtonCallback(window, mouse_button_callback);  // 添加鼠标按键回调
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
 
     void initVulkan() {
@@ -315,6 +407,28 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            
+            // 检查窗口是否处于活动状态
+            if (glfwGetWindowAttrib(window, GLFW_FOCUSED)) {
+                // 检查ESC键
+                if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+                    std::cout << "ESC pressed, toggling camera control from " 
+                             << (cameraControlEnabled ? "enabled" : "disabled") 
+                             << " to " 
+                             << (!cameraControlEnabled ? "enabled" : "disabled") 
+                             << std::endl;
+                    
+                    cameraControlEnabled = !cameraControlEnabled;
+                    glfwSetInputMode(window, GLFW_CURSOR, 
+                        cameraControlEnabled ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+                    
+                    // 等待ESC键释放
+                    while (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+                        glfwPollEvents();
+                    }
+                }
+            }
+            
             drawFrame();
         }
         vkDeviceWaitIdle(device);
@@ -433,8 +547,9 @@ private:
             createInfo.ppEnabledLayerNames = validationLayers.data();
 
             populateDebugMessengerCreateInfo(debugCreateInfo);
-            createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
-        } else {
+            createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+        }
+        else {
             createInfo.enabledLayerCount = 0;
 
             createInfo.pNext = nullptr;
@@ -552,7 +667,7 @@ private:
 
     void createImageViews() {
         swapChainImageViews.resize(swapChainImages.size());
-        for (size_t i = 0; i < swapChainImages.size();i++) {
+        for (size_t i = 0; i < swapChainImages.size(); i++) {
             swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
         }
     }
@@ -835,7 +950,7 @@ private:
         if (vkCreateCommandPool(device, &poolInfoTransfer, nullptr, &commandPoolTransfer) != VK_SUCCESS) {
             throw std::runtime_error("failed to create transfer command pool!");
         }
-        
+
     }
 
     void createDepthResources() {
@@ -850,7 +965,7 @@ private:
 
     VkFormat findDepthFormat() {
 
-        return findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},VK_IMAGE_TILING_OPTIMAL,VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+        return findSupportedFormat({ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT }, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
     }
 
     bool hasStencilComponent(VkFormat format) {
@@ -930,7 +1045,8 @@ private:
             imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
             imageInfo.queueFamilyIndexCount = 2;
             imageInfo.pQueueFamilyIndices = queueFamilyIndices;
-        } else {
+        }
+        else {
             imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             imageInfo.queueFamilyIndexCount = 0; // Optional
             imageInfo.pQueueFamilyIndices = nullptr; // Optional
@@ -1040,7 +1156,7 @@ private:
             0, nullptr,
             1, &barrier);
 
-        endSingleTimeCommands(commandPool,graphicsQueue, commandBufferGraphics);
+        endSingleTimeCommands(commandPool, graphicsQueue, commandBufferGraphics);
     }
 
     //大体上理解了，但是还是需要多看几遍
@@ -1108,9 +1224,9 @@ private:
             1, &barrier
         );
 
-        endSingleTimeCommands(commandPoolTransfer,transferQueue,commandBufferTransfer);
+        endSingleTimeCommands(commandPoolTransfer, transferQueue, commandBufferTransfer);
     }
-    
+
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
         VkCommandBuffer commandBufferTransfer = beginSingleTimeCommands(commandPoolTransfer);
 
@@ -1140,7 +1256,7 @@ private:
             &region
         );
 
-        endSingleTimeCommands(commandPoolTransfer,transferQueue, commandBufferTransfer);
+        endSingleTimeCommands(commandPoolTransfer, transferQueue, commandBufferTransfer);
     }
 
     void createTextureImageView() {
@@ -1157,7 +1273,7 @@ private:
         // 线性过滤
         samplerInfo.magFilter = VK_FILTER_LINEAR;   // 在texels之间进行线性插值
         samplerInfo.minFilter = VK_FILTER_LINEAR;   // 计算多个texels的平均值
-        
+
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -1189,7 +1305,7 @@ private:
     //    std::vector<real_t> texcoords;  // 纹理坐标 (u,v)
     //    std::vector<real_t> colors;     // 顶点颜色 (r,g,b)
     //} attrib_t;
-     
+
     //typedef struct {
     //    std::string name;               // 形状名称
     //    mesh_t mesh;                    // 网格数据
@@ -1232,13 +1348,13 @@ private:
                 }
 
                 indices.push_back(uniqueVertices[vertex]);
-            
+
             }
         }
     }
 
     void createVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size()+sizeof(indices[0])*indices.size();
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size() + sizeof(indices[0]) * indices.size();
         VkDeviceSize bufferSize1 = sizeof(vertices[0]) * vertices.size();
         VkDeviceSize bufferSize2 = sizeof(indices[0]) * indices.size();
 
@@ -1306,13 +1422,13 @@ private:
         if (indices.graphicsFamily.value() != indices.transferFamily.value()) {
             bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
 
-            uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(),indices.transferFamily.value()};
+            uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(),indices.transferFamily.value() };
 
             bufferInfo.queueFamilyIndexCount = 2;
             bufferInfo.pQueueFamilyIndices = queueFamilyIndices;
         }
         else {
-            bufferInfo.sharingMode =VK_SHARING_MODE_EXCLUSIVE;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             bufferInfo.queueFamilyIndexCount = 0;
             bufferInfo.pQueueFamilyIndices = nullptr;
         }
@@ -1355,7 +1471,7 @@ private:
         return commandBuffer;
     }
 
-    void endSingleTimeCommands(VkCommandPool commandPool, VkQueue queue,VkCommandBuffer commandBuffer) {
+    void endSingleTimeCommands(VkCommandPool commandPool, VkQueue queue, VkCommandBuffer commandBuffer) {
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};
@@ -1379,7 +1495,7 @@ private:
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBufferTransfer, srcBuffer, dstBuffer, 1, &copyRegion);
 
-        endSingleTimeCommands(commandPoolTransfer,transferQueue,commandBufferTransfer);
+        endSingleTimeCommands(commandPoolTransfer, transferQueue, commandBufferTransfer);
     }
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -1512,7 +1628,7 @@ private:
 
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
-      
+
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
         vkCmdBindIndexBuffer(commandBuffer, vertexBuffers[0], sizeof(Vertex) * vertices.size(), VK_INDEX_TYPE_UINT32);
@@ -1568,14 +1684,24 @@ private:
 
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        //camera
+        float currentFrame = time;
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        // 只在视角控制启用时处理键盘输入
+        if (cameraControlEnabled) {
+            camera.processKeyboard(window, deltaTime);
+        }
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f)/10, glm::vec3(0.1f, 0.0f, 0.0f));
+        //ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //ubo.model = glm::rotate(ubo.model, time * glm::radians(90.0f) / 10, glm::vec3(0.1f, 0.0f, 0.0f));
 
-
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+        // 使用单位矩阵，不进行任何旋转
+        ubo.model = glm::mat4(1.0f);
+        ubo.view = camera.getViewMatrix();
+        ubo.proj = glm::perspective(glm::radians(camera.getZoom()), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
 
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1609,7 +1735,7 @@ private:
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
         VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
@@ -1629,7 +1755,7 @@ private:
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = signalSemaphores;
 
-        VkSwapchainKHR swapChains[] = {swapChain};
+        VkSwapchainKHR swapChains[] = { swapChain };
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapChains;
         presentInfo.pImageIndices = &imageIndex;
@@ -1708,7 +1834,7 @@ private:
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
         SwapChainSupportDetails details;
 
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device,surface,&details.capabilities);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
 
         uint32_t formatCount;
         vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
@@ -1804,14 +1930,14 @@ private:
                 indices.graphicsFamily = i;
             }
             VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface,&presentSupport);
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
             if (presentSupport == VK_TRUE) {
                 indices.presentFamily = i;
             }
-            if ((queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) &&!(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) &&!(queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+            if ((queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) && !(queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 indices.transferFamily = i;
             }
-            
+
             i++;
         }
 
@@ -1840,7 +1966,7 @@ private:
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(),indices.presentFamily.value(),indices.transferFamily.value()};
+        std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(),indices.presentFamily.value(),indices.transferFamily.value() };
 
         float queuePriority = 1.0f;
         for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -1923,7 +2049,7 @@ private:
         return true;
     }
 
-    
+
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -1955,12 +2081,60 @@ private:
         VkDebugUtilsMessageTypeFlagsEXT messageType,
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData) {
-        
+
         // 只显示错误和警告消息
         if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
             std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
         }
         return VK_FALSE;
+    }
+    //camera
+    static void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+        HelloTriangleApplication* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        
+        // 只在视角控制启用时处理鼠标移动
+        if (!app->cameraControlEnabled) {
+            return;
+        }
+
+        if (app->firstMouse) {
+            app->lastX = static_cast<float>(xpos);
+            app->lastY = static_cast<float>(ypos);
+            app->firstMouse = false;
+        }
+
+        float xoffset = static_cast<float>(xpos) - app->lastX;
+        float yoffset = app->lastY - static_cast<float>(ypos);
+        app->lastX = static_cast<float>(xpos);
+        app->lastY = static_cast<float>(ypos);
+
+        app->camera.processMouseMovement(xoffset, yoffset);
+    }
+
+    static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+        HelloTriangleApplication* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->camera.processMouseScroll(static_cast<float>(yoffset));
+    }
+
+    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->framebufferResized = true;
+    }
+
+    // 添加鼠标按键回调函数
+    static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+        HelloTriangleApplication* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        
+        // 检查是否是鼠标左键按下
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            if (!app->cameraControlEnabled) {
+                std::cout << "Left mouse button pressed, enabling camera control" << std::endl;
+                app->cameraControlEnabled = true;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                // 重置firstMouse标志，这样不会出现视角突变
+                app->firstMouse = true;
+            }
+        }
     }
 
 };
@@ -1969,11 +2143,12 @@ int main() {
     HelloTriangleApplication app;
 
     try {
-        system("shaders\\compile.bat"); 
+        system("shaders\\compile.bat");
 
         app.run();
-        
-    } catch (const std::exception& e) {
+
+    }
+    catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
     }
