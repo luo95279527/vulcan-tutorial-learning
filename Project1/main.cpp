@@ -12,6 +12,9 @@
 #include <glm/gtx/hash.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 #include <optional>
 #include <iostream>
 #include <stdexcept>
@@ -257,6 +260,7 @@ private:
 
 
 class HelloTriangleApplication {
+
 public:
     void run() {
         initWindow();
@@ -266,6 +270,13 @@ public:
     }
 
 private:
+    
+    struct MemoryPools {
+        VmaPool vertexBufferPool;
+        VmaPool uniformBufferPool;
+        VmaPool texturePool;
+    };
+
     GLFWwindow* window;
 
     VkInstance instance;
@@ -280,6 +291,8 @@ private:
     VkQueue presentQueue;
     VkQueue transferQueue;
 
+    VmaAllocator allocator;  // 添加VMA分配器
+
     VkSwapchainKHR swapChain;
     std::vector<VkImage> swapChainImages;
     VkFormat swapChainImageFormat;
@@ -291,10 +304,19 @@ private:
     VkImage textureImage;
     VkImageView textureImageView;
     VkSampler textureSampler;
-    VkDeviceMemory textureImageMemory;
+    //VkDeviceMemory textureImageMemory;
+    VmaAllocation textureImageAllocation;
+
+    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkImage colorImage;
+    //VkDeviceMemory colorImageMemory;
+    VmaAllocation colorAllocation;
+    VkImageView colorImageView;
 
     VkImage depthImage;
-    VkDeviceMemory depthImageMemory;
+    //VkDeviceMemory depthImageMemory;
+    VmaAllocation depthImageAllocation;
     VkImageView depthImageView;
 
     VkRenderPass renderPass;
@@ -305,6 +327,7 @@ private:
     std::vector<VkCommandBuffer> commandBuffers;
     VkCommandPool commandPoolTransfer;
     //std::vector<VkCommandBuffer> commandBuffersTransfer;
+    MemoryPools memoryPools;
 
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;
@@ -313,12 +336,14 @@ private:
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
+    //VkDeviceMemory vertexBufferMemory;
+    VmaAllocation vertexBufferAllocation;
     VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
+    VkDeviceMemory indexBufferMemory;//不用修改index，indexbuffer是存储在vertexbuffer中的
 
     std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
+    //std::vector<VkDeviceMemory> uniformBuffersMemory;
+    std::vector<VmaAllocation> uniformBuffersAllocation;
     std::vector<void*> uniformBuffersMapped;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -358,7 +383,6 @@ private:
         glm::mat4 proj;
     };
 
-
     void initWindow() {
         glfwInit();
 
@@ -383,12 +407,15 @@ private:
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
+        initVMA();
+        initMemoryPools();
         createSwapChain();
         createImageViews();
         createRenderPass();
         createDescriptorSetLayout();
         createGraphicsPipeline();
         createCommandPool();
+        createColorResources();
         createDepthResources();
         createFramebuffers();
         createTextureImage();
@@ -430,32 +457,29 @@ private:
             }
             
             drawFrame();
+            //monitorMemoryUsage();
         }
         vkDeviceWaitIdle(device);
     }
 
     void cleanup() {
-
         cleanupSwapChain();
 
         vkDestroySampler(device, textureSampler, nullptr);
         vkDestroyImageView(device, textureImageView, nullptr);
-        vkDestroyImage(device, textureImage, nullptr);
-        vkFreeMemory(device, textureImageMemory, nullptr);
+        vmaDestroyImage(allocator, textureImage, textureImageAllocation);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-            vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+            vmaDestroyBuffer(allocator, uniformBuffers[i], uniformBuffersAllocation[i]);
         }
 
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
-        vkDestroyBuffer(device, indexBuffer, nullptr);
-        vkFreeMemory(device, indexBufferMemory, nullptr);
+        //vmaDestroyBuffer(allocator, indexBuffer, (VmaAllocation)indexBufferMemory);
+        vmaDestroyBuffer(allocator, vertexBuffer, vertexBufferAllocation);
 
-        vkDestroyBuffer(device, vertexBuffer, nullptr);
-        vkFreeMemory(device, vertexBufferMemory, nullptr);
 
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -480,16 +504,54 @@ private:
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
 
+        vmaDestroyAllocator(allocator);
+
         glfwDestroyWindow(window);
 
         glfwTerminate();
     }
 
+    void monitorMemoryUsage() {
+        //VmaStats stats;
+        //vmaCalculateStats(allocator, &stats);
+
+        //// 获取内存堆信息
+        //VkPhysicalDeviceMemoryProperties memProperties;
+        //vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+        //std::cout << "VMA Memory Usage Stats:" << std::endl;
+        //std::cout << "  Total Used Bytes: " << stats.total.usedBytes / (1024.0 * 1024.0) << " MB" << std::endl;
+        //std::cout << "  Total Allocations: " << stats.total.statistics.allocationCount << std::endl;
+        //std::cout << "  Total Blocks: " << stats.total.statistics.blockCount << std::endl;
+
+        //VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+        //vmaGetHeapBudgets(allocator, budgets);
+
+        //for (uint32_t i = 0; i < memProperties.memoryHeapCount; ++i) {
+        //    std::cout << "  Heap " << i << ":" << std::endl;
+        //    std::cout << "    Budget: " << budgets[i].budget / (1024.0 * 1024.0) << " MB" << std::endl;
+        //    std::cout << "    Usage: " << budgets[i].usage / (1024.0 * 1024.0) << " MB" << std::endl;
+        //    std::cout << "    Allocations: " << budgets[i].statistics.allocationCount << std::endl;
+        //    std::cout << "    Blocks: " << budgets[i].statistics.blockCount << std::endl;
+
+        //    if (budgets[i].usage > budgets[i].budget) {
+        //        std::cerr << "    WARNING: Heap " << i << " budget exceeded!" << std::endl;
+        //        // 在这里可以添加更复杂的错误处理，例如：
+        //        // - 记录日志
+        //        // - 降低资源质量
+        //        // - 提前释放不必要的资源
+        //    }
+        //}
+        //std::cout << std::endl;
+    }
+
     void cleanupSwapChain() {
+        vkDestroyImageView(device, colorImageView, nullptr);
+        vmaDestroyImage(allocator, colorImage, colorAllocation);
 
         vkDestroyImageView(device, depthImageView, nullptr);
-        vkDestroyImage(device, depthImage, nullptr);
-        vkFreeMemory(device, depthImageMemory, nullptr);
+        vmaDestroyImage(allocator, depthImage, depthImageAllocation);
+
         for (size_t i = 0; i < swapChainFramebuffers.size(); i++) {
             vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
         }
@@ -516,6 +578,7 @@ private:
 
         createSwapChain();
         createImageViews();
+        createColorResources();
         createDepthResources();
         createFramebuffers();
     }
@@ -599,6 +662,7 @@ private:
         for (const auto& device : devices) {
             if (isDeviceSuitable(device)) {
                 physicalDevice = device;
+                msaaSamples = getMaxUsableSampleCount();
                 break;
             }
         }
@@ -608,6 +672,67 @@ private:
         }
     }
 
+    VkSampleCountFlagBits getMaxUsableSampleCount() {
+        VkPhysicalDeviceProperties physicalDeviceProperties;
+        vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+        VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+        if (counts & VK_SAMPLE_COUNT_64_BIT) { return VK_SAMPLE_COUNT_64_BIT; }
+        if (counts & VK_SAMPLE_COUNT_32_BIT) { return VK_SAMPLE_COUNT_32_BIT; }
+        if (counts & VK_SAMPLE_COUNT_16_BIT) { return VK_SAMPLE_COUNT_16_BIT; }
+        if (counts & VK_SAMPLE_COUNT_8_BIT) { return VK_SAMPLE_COUNT_8_BIT; }
+        if (counts & VK_SAMPLE_COUNT_4_BIT) { return VK_SAMPLE_COUNT_4_BIT; }
+        if (counts & VK_SAMPLE_COUNT_2_BIT) { return VK_SAMPLE_COUNT_2_BIT; }
+
+        return VK_SAMPLE_COUNT_1_BIT;
+    }
+
+    void initVMA() {
+        VmaAllocatorCreateInfo allocatorInfo = {};
+        allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_0;
+        allocatorInfo.physicalDevice = physicalDevice;
+        allocatorInfo.device = device;
+        allocatorInfo.instance = instance;
+
+        if (vmaCreateAllocator(&allocatorInfo, &allocator) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create VMA allocator!");
+        }
+    }
+
+    void initMemoryPools() {
+        // 顶点/索引缓冲区内存池
+        VmaPoolCreateInfo vertexBufferPoolInfo = {};
+        vertexBufferPoolInfo.blockSize = 1024 * 1024 * 64; // 64MB
+        vertexBufferPoolInfo.minBlockCount = 1;
+        vertexBufferPoolInfo.maxBlockCount = 0; // 无限制
+        vertexBufferPoolInfo.memoryTypeIndex = findMemoryType(UINT32_MAX, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // 修改：使用UINT32_MAX作为typeFilter
+
+        if (vmaCreatePool(allocator, &vertexBufferPoolInfo, &memoryPools.vertexBufferPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create vertex buffer memory pool!");
+        }
+
+        // Uniform缓冲区内存池
+        VmaPoolCreateInfo uniformBufferPoolInfo = {};
+        uniformBufferPoolInfo.blockSize = 1024 * 1024; // 1MB
+        uniformBufferPoolInfo.minBlockCount = 1;
+        uniformBufferPoolInfo.maxBlockCount = 0;
+        uniformBufferPoolInfo.memoryTypeIndex = findMemoryType(UINT32_MAX, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); // 修改：使用UINT32_MAX作为typeFilter
+
+        if (vmaCreatePool(allocator, &uniformBufferPoolInfo, &memoryPools.uniformBufferPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create uniform buffer memory pool!");
+        }
+
+        // 纹理图像内存池
+        VmaPoolCreateInfo texturePoolInfo = {};
+        texturePoolInfo.blockSize = 1024 * 1024 * 128; // 128MB
+        texturePoolInfo.minBlockCount = 1;
+        texturePoolInfo.maxBlockCount = 0;
+        texturePoolInfo.memoryTypeIndex = findMemoryType(UINT32_MAX, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // 修改：使用UINT32_MAX作为typeFilter
+
+        if (vmaCreatePool(allocator, &texturePoolInfo, &memoryPools.texturePool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create texture memory pool!");
+        }
+    }
 
     void createSwapChain() {
         SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
@@ -695,23 +820,33 @@ private:
     void createRenderPass() {
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = swapChainImageFormat;
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.samples = msaaSamples;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
         VkAttachmentDescription depthAttachment{};
         depthAttachment.format = findDepthFormat();
-        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.samples = msaaSamples;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;//不同
         depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentDescription colorAttachmentResolve{};
+        colorAttachmentResolve.format = swapChainImageFormat;
+        colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
         VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;
@@ -721,13 +856,18 @@ private:
         depthAttachmentRef.attachment = 1;
         depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+        VkAttachmentReference colorAttachmentResolveRef{};
+        colorAttachmentResolveRef.attachment = 2;
+        colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
         subpass.pDepthStencilAttachment = &depthAttachmentRef;
+        subpass.pResolveAttachments = &colorAttachmentResolveRef;
 
-        std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+        std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, depthAttachment, colorAttachmentResolve };
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
         renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
@@ -830,14 +970,15 @@ private:
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
         //rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
         VkPipelineMultisampleStateCreateInfo multisampling{};
         multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisampling.sampleShadingEnable = VK_FALSE;
-        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisampling.sampleShadingEnable = VK_TRUE; // enable sample shading in the pipeline
+        multisampling.minSampleShading = .2f; // min fraction for sample shading; closer to one is smooth
+        multisampling.rasterizationSamples = msaaSamples;
 
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -913,7 +1054,7 @@ private:
         swapChainFramebuffers.resize(swapChainImageViews.size());
 
         for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-            std::array<VkImageView, 2> attachments = { swapChainImageViews[i] , depthImageView };
+            std::array<VkImageView, 3> attachments = {colorImageView,depthImageView,swapChainImageViews[i]};
 
             VkFramebufferCreateInfo framebufferInfo{};
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -953,10 +1094,17 @@ private:
 
     }
 
+    void createColorResources() {
+        VkFormat colorFormat = swapChainImageFormat;
+
+        createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, colorFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, colorImage, colorAllocation);
+        colorImageView = createImageView(colorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    }
+
     void createDepthResources() {
         VkFormat depthFormat = findDepthFormat();
 
-        createImage(swapChainExtent.width, swapChainExtent.height, 1, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
+        createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples,depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageAllocation);
         depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
         //transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
@@ -1000,30 +1148,34 @@ private:
         }
 
         VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
+        //VkDeviceMemory stagingBufferMemory;
+        VmaAllocation stagingAllocation;
 
-        createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingAllocation);
 
         void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+        if (vmaMapMemory(allocator, stagingAllocation, &data) != VK_SUCCESS) {
+            vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+            throw std::runtime_error("failed to map memory!");
+        }
+
         memcpy(data, pixels, static_cast<size_t>(imageSize));
-        vkUnmapMemory(device, stagingBufferMemory);
+        vmaUnmapMemory(allocator, stagingAllocation);
 
         stbi_image_free(pixels);
 
-        createImage(texWidth, texHeight, mipLevels, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
+        createImage(texWidth, texHeight, mipLevels, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageAllocation);
 
         transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
         copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
         //transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);
 
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
 
         generateMipmaps(textureImage, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, mipLevels);
     }
 
-    void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
+    void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSample, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VmaAllocation& imageAllocation) {
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1036,39 +1188,49 @@ private:
         imageInfo.tiling = tiling;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageInfo.usage = usage;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        //不同点
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-        uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.transferFamily.value() };
+        imageInfo.samples = numSample;
 
+        // 检查图形队列和传输队列是否相同
+        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
         if (indices.graphicsFamily.value() != indices.transferFamily.value()) {
             imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+            uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.transferFamily.value() };
             imageInfo.queueFamilyIndexCount = 2;
             imageInfo.pQueueFamilyIndices = queueFamilyIndices;
-        }
-        else {
+        } else {
             imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            imageInfo.queueFamilyIndexCount = 0; // Optional
-            imageInfo.pQueueFamilyIndices = nullptr; // Optional
+            imageInfo.queueFamilyIndexCount = 0;
+            imageInfo.pQueueFamilyIndices = nullptr;
         }
 
-        if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+        // 使用VMA创建图像和分配内存
+        VmaAllocationCreateInfo allocInfo = {};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO; // 默认值，如果未匹配到特定池，VMA会根据requiredFlags和此usage在全局分配
+        allocInfo.requiredFlags = properties;
+
+        // 根据图像用途选择对应的内存池
+        if (usage & VK_IMAGE_USAGE_SAMPLED_BIT) {
+            allocInfo.pool = memoryPools.texturePool;
+            allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY; // 明确指定为GPU_ONLY
+        }
+        // 对于传输目标，通常是临时性的，可以不指定池，让VMA根据usage和requiredFlags在全局内存中分配
+        else if (usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+            allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY; // 确保为传输目标选择GPU本地内存
+        }
+        // 对于传输源，通常是临时性的，可以不指定池，让VMA根据usage和requiredFlags在全局内存中分配
+        else if (usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+            allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY; // 确保为传输源选择CPU可访问内存
+        }
+
+        // 如果requiredFlags中包含主机可见，则确保设置主机访问标志
+        if (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            allocInfo.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        }
+
+        if (vmaCreateImage(allocator, &imageInfo, &allocInfo, &image, &imageAllocation, nullptr) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image!");
         }
 
-        VkMemoryRequirements memRequirements;
-        vkGetImageMemoryRequirements(device, image, &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate image memory!");
-        }
-
-        vkBindImageMemory(device, image, imageMemory, 0);
     }
 
     void generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
@@ -1359,97 +1521,106 @@ private:
         VkDeviceSize bufferSize2 = sizeof(indices[0]) * indices.size();
 
         VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        //VkDeviceMemory stagingBufferMemory;
+        VmaAllocation stagingAllocation;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingAllocation);
 
         void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), (size_t)bufferSize1);
-        //memcpy((uint16_t*)data + bufferSize1, indices.data(), (size_t)bufferSize2);
-        memcpy(static_cast<char*>(data) + bufferSize1, indices.data(), (size_t)bufferSize2);
-        vkUnmapMemory(device, stagingBufferMemory);
+        vmaMapMemory(allocator, stagingAllocation, &data);
+        memcpy(data, vertices.data(), (size_t)(sizeof(vertices[0]) * vertices.size()));
+        memcpy((char*)data + bufferSize1, indices.data(), bufferSize2);
+        vmaUnmapMemory(allocator, stagingAllocation);
 
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferAllocation);
 
         copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
     }
 
     void createIndexBuffer() {
-        VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+        //VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+        //VkBuffer stagingBuffer;
+        //VkDeviceMemory stagingBufferMemory;
+        //createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, indices.data(), (size_t)bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
+        //void* data;
+        //vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        //memcpy(data, indices.data(), (size_t)bufferSize);
+        //vkUnmapMemory(device, stagingBufferMemory);
 
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+        //createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
 
-        copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+        //copyBuffer(stagingBuffer, indexBuffer, bufferSize);
 
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        //vkDestroyBuffer(device, stagingBuffer, nullptr);
+        //vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
     void createUniformBuffers() {
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
         uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-        uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+        uniformBuffersAllocation.resize(MAX_FRAMES_IN_FLIGHT);
         uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+            createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersAllocation[i]);
 
-            vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+            vmaMapMemory(allocator, uniformBuffersAllocation[i], &uniformBuffersMapped[i]);
         }
     }
 
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VmaAllocation& bufferAllocation) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = size;
         bufferInfo.usage = usage;
-        //bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
 
+        // 检查图形队列和传输队列是否相同
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
         if (indices.graphicsFamily.value() != indices.transferFamily.value()) {
             bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-
-            uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(),indices.transferFamily.value() };
-
+            uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.transferFamily.value() };
             bufferInfo.queueFamilyIndexCount = 2;
             bufferInfo.pQueueFamilyIndices = queueFamilyIndices;
-        }
-        else {
+        } else {
             bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
             bufferInfo.queueFamilyIndexCount = 0;
             bufferInfo.pQueueFamilyIndices = nullptr;
         }
 
-        if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        // 使用VMA创建缓冲区和分配内存
+        VmaAllocationCreateInfo allocInfo = {};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO; // 默认值，如果未匹配到特定池，VMA会根据requiredFlags和此usage在全局分配
+        allocInfo.requiredFlags = properties;
+        
+        // 根据缓冲区用途选择对应的内存池
+        if (usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT || usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+            allocInfo.pool = memoryPools.vertexBufferPool;
+            allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY; // 明确指定为GPU_ONLY
+        }
+        else if (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
+            allocInfo.pool = memoryPools.uniformBufferPool;
+            allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU; // 明确指定为CPU_TO_GPU
+        }
+        // 对于传输源和目标，通常是临时性的，可以不指定池，让VMA根据usage和requiredFlags在全局内存中分配
+        else if (usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT) {
+            allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY; // 确保为传输源选择CPU可访问内存
+        }
+        else if (usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT) {
+            allocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY; // 确保为传输目标选择GPU本地内存
+        }
+
+        // 如果requiredFlags中包含主机可见，则确保设置主机访问标志
+        if (properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+            allocInfo.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+        }
+
+        if (vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &buffer, &bufferAllocation, nullptr) != VK_SUCCESS) {
             throw std::runtime_error("failed to create buffer!");
         }
-
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate buffer memory!");
-        }
-
-        vkBindBufferMemory(device, buffer, bufferMemory, 0);
     }
 
     VkCommandBuffer beginSingleTimeCommands(VkCommandPool commandPool) {
@@ -1980,6 +2151,7 @@ private:
 
         VkPhysicalDeviceFeatures deviceFeatures{};
         deviceFeatures.samplerAnisotropy = VK_TRUE;
+        deviceFeatures.sampleRateShading = VK_TRUE;
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
