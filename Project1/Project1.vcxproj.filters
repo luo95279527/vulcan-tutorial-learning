@@ -39,10 +39,24 @@
     <None Include="shaders\compile.bat">
       <Filter>资源文件\shaders</Filter>
     </None>
+    <None Include="shaders\particleshader.vert">
+      <Filter>资源文件\shaders</Filter>
+    </None>
+    <None Include="shaders\particleshader.frag">
+      <Filter>资源文件\shaders</Filter>
+    </None>
+    <None Include="shaders\particlecompile.bat">
+      <Filter>资源文件\shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="shaders\particleshader.compute">
+      <Filter>资源文件\shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>
