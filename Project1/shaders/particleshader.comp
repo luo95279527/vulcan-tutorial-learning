@@ -1,13 +1,19 @@
 #version 450
 
 struct Particle {
-	vec2 position;
-	vec2 velocity;
+	vec3 position;
+	vec3 velocity;
     vec4 color;
 };
 
 layout (binding = 0) uniform ParameterUBO {
     float deltaTime;
+    float left;
+    float right;
+    float bottom;
+    float top;
+    float front;
+    float back;
 } ubo;
 
 layout(std140, binding = 1) readonly buffer ParticleSSBOIn {
@@ -26,15 +32,20 @@ void main()
 
     Particle particleIn = particlesIn[index];
 
-    particlesOut[index].position = particleIn.position + particleIn.velocity.xy * ubo.deltaTime;
+    particlesOut[index].position = particleIn.position + particleIn.velocity * ubo.deltaTime;
     particlesOut[index].velocity = particleIn.velocity;
 
     // Flip movement at window border
-    if ((particlesOut[index].position.x <= -1.0) || (particlesOut[index].position.x >= 1.0)) {
-        particlesOut[index].velocity.x = -particlesOut[index].velocity.x;
+    if ((particlesOut[index].position.x <= ubo.left) || (particlesOut[index].position.x >= ubo.right)) {
+        particlesOut[index].velocity.x = -particlesOut[index].velocity.x * (4.0 / 3.0);
+        particlesOut[index].position.x = clamp(particlesOut[index].position.x, ubo.left, ubo.right);
     }
-    if ((particlesOut[index].position.y <= -1.0) || (particlesOut[index].position.y >= 1.0)) {
-        particlesOut[index].velocity.y = -particlesOut[index].velocity.y;
+    if ((particlesOut[index].position.y <= ubo.bottom) || (particlesOut[index].position.y >= ubo.top)) {
+        particlesOut[index].velocity.y = -particlesOut[index].velocity.y * (3.0 / 4.0);
+        particlesOut[index].position.y = clamp(particlesOut[index].position.y, ubo.bottom, ubo.top);
     }
-
+    if ((particlesOut[index].position.z <= ubo.front) || (particlesOut[index].position.z >= ubo.back)) {
+        particlesOut[index].velocity.z = -particlesOut[index].velocity.z * (3.0 / 4.0); // 你可以自定义z方向的速度变化
+        particlesOut[index].position.z = clamp(particlesOut[index].position.z, ubo.front, ubo.back);
+    }
 }

@@ -143,6 +143,7 @@
     <None Include="shaders\compile.bat" />
     <None Include="shaders\frag.spv" />
     <None Include="shaders\particlecompile.bat" />
+    <None Include="shaders\particleshader.comp" />
     <None Include="shaders\particleshader.frag" />
     <None Include="shaders\particleshader.vert" />
     <None Include="shaders\shader.frag" />
