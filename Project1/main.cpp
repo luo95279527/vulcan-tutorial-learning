@@ -38,6 +38,7 @@ const uint32_t PARTICLE_COUNT = 8192;
 
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
+const std::string PARTICLETEXTURE_PATH = "textures/fire.png";
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 const std::vector<const char*> validationLayers = {
@@ -348,6 +349,11 @@ private:
 
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    VkImage particleTextureImage;
+    VkImageView particleTextureImageView;
+    VkSampler particleTextureSampler;
+    VmaAllocation particleTextureImageAllocation;
+
     VkImage colorImage;
     //VkDeviceMemory colorImageMemory;
     VmaAllocation colorAllocation;
@@ -512,6 +518,9 @@ private:
         createDepthResources();
         createFramebuffers();
 
+        createParticleTextureImage();
+        createParticleTextureImageView();
+        createParticleTextureSampler();
         //createTextureImage();
         //createTextureImageView();
         //createTextureSampler();
@@ -571,6 +580,10 @@ private:
 
     void cleanup() {
         cleanupSwapChain();
+
+        vkDestroySampler(device, particleTextureSampler, nullptr);
+        vkDestroyImageView(device, particleTextureImageView, nullptr);
+        vmaDestroyImage(allocator, particleTextureImage, particleTextureImageAllocation);
 
         vkDestroySampler(device, textureSampler, nullptr);
         vkDestroyImageView(device, textureImageView, nullptr);
@@ -783,7 +796,8 @@ private:
         for (const auto& device : devices) {
             if (isDeviceSuitable(device)) {
                 physicalDevice = device;
-                msaaSamples = getMaxUsableSampleCount();
+                //msaaSamples = getMaxUsableSampleCount();
+                msaaSamples = VK_SAMPLE_COUNT_1_BIT;
                 break;
             }
         }
@@ -1008,12 +1022,19 @@ private:
         mvpLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         mvpLayoutBinding.pImmutableSamplers = nullptr;
 
-        VkDescriptorSetLayoutBinding bindings = {mvpLayoutBinding};
+        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+        samplerLayoutBinding.binding = 1;
+        samplerLayoutBinding.descriptorCount = 1;
+        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.pImmutableSamplers = nullptr;
+        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        std::array<VkDescriptorSetLayoutBinding,2> bindings = {mvpLayoutBinding,samplerLayoutBinding};
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &bindings;
+        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        layoutInfo.pBindings = bindings.data();
 
         if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &graphicsDescriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor set layout!");
@@ -1345,6 +1366,37 @@ private:
         generateMipmaps(textureImage, VK_FORMAT_R8G8B8A8_SRGB, texWidth, texHeight, mipLevels);
     }
 
+    void createParticleTextureImage() {
+        int texWidth, texHeight, texChannels;
+        stbi_uc* pixels = stbi_load(PARTICLETEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+        if (!pixels) {
+            throw std::runtime_error("failed to load particle texture image!");
+        }
+
+        VkBuffer stagingBuffer;
+        VmaAllocation stagingAllocation;
+        createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingAllocation);
+
+        void* data;
+        vmaMapMemory(allocator, stagingAllocation, &data);
+        memcpy(data, pixels, static_cast<size_t>(imageSize));
+        vmaUnmapMemory(allocator, stagingAllocation);
+
+        stbi_image_free(pixels);
+
+        createImage(texWidth, texHeight, 1, VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            particleTextureImage, particleTextureImageAllocation);
+
+        transitionImageLayout(particleTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1);
+        copyBufferToImage(stagingBuffer, particleTextureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+        transitionImageLayout(particleTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+
+        vmaDestroyBuffer(allocator, stagingBuffer, stagingAllocation);
+    }
+
     void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSample, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VmaAllocation& imageAllocation) {
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1596,6 +1648,10 @@ private:
         textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
     }
 
+    void createParticleTextureImageView() {
+        particleTextureImageView = createImageView(particleTextureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+    }
+
     void createTextureSampler() {
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -1629,6 +1685,30 @@ private:
 
         if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
             throw std::runtime_error("failed to create texture sampler!");
+        }
+    }
+
+    void createParticleTextureSampler() {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.anisotropyEnable = VK_FALSE;
+        samplerInfo.maxAnisotropy = 1.0f;
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = 0.0f;
+        samplerInfo.mipLodBias = 0.0f;
+
+        if (vkCreateSampler(device, &samplerInfo, nullptr, &particleTextureSampler) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create particle texture sampler!");
         }
     }
 
@@ -1949,6 +2029,7 @@ private:
         }
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+
             VkDescriptorBufferInfo mvpBufferInfo{};
             mvpBufferInfo.buffer = mvpUniformBuffers[i];
             mvpBufferInfo.offset = 0;
@@ -1963,7 +2044,23 @@ private:
             mvpDescriptorWrite.descriptorCount = 1;
             mvpDescriptorWrite.pBufferInfo = &mvpBufferInfo;
 
-            vkUpdateDescriptorSets(device, 1, &mvpDescriptorWrite, 0, nullptr);
+            VkDescriptorImageInfo particleImageInfo{};
+            particleImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            particleImageInfo.imageView = particleTextureImageView;
+            particleImageInfo.sampler = particleTextureSampler;
+
+            VkWriteDescriptorSet particleDescriptorWrite{};
+            particleDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            particleDescriptorWrite.dstSet = graphicsDescriptorSets[i]; 
+            particleDescriptorWrite.dstBinding = 1; // binding=1
+            particleDescriptorWrite.dstArrayElement = 0;
+            particleDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            particleDescriptorWrite.descriptorCount = 1;
+            particleDescriptorWrite.pImageInfo = &particleImageInfo;
+            
+            std::array<VkWriteDescriptorSet,2> descriptorSets = {mvpDescriptorWrite,particleDescriptorWrite};
+
+            vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
         }
 
     }
